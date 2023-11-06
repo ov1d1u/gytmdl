@@ -225,17 +225,19 @@ def cli(
 
     downloaded_track_ids = []
     for path in final_path.glob("**/*.mp3"):
-        audio = MP3(path, ID3=ID3)
-        ytid = None
-        for key in audio.tags.keys():
-            if key.startswith("TXXX:"):
-                desc = key.split(':', 1)[1]
-                if desc == 'ytid':
-                    ytid = audio.tags[key].text[0]
-                    break
-        if ytid is not None:
-            downloaded_track_ids.append(ytid)
-
+        try:
+            audio = MP3(path, ID3=ID3)
+            ytid = None
+            for key in audio.tags.keys():
+                if key.startswith("TXXX:"):
+                    desc = key.split(':', 1)[1]
+                    if desc == 'ytid':
+                        ytid = audio.tags[key].text[0]
+                        break
+            if ytid is not None:
+                downloaded_track_ids.append(ytid)
+        except Exception:
+            logger.debug(f"Failed to read tags from {path}", exc_info=print_exceptions)
     logger.debug("Starting downloader")
     dl = Dl(**locals())
     download_queue = []
