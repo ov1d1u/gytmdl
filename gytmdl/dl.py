@@ -6,20 +6,18 @@ import subprocess
 from pathlib import Path
 
 import requests
-from mutagen.mp4 import MP4, MP4Cover
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK, TYER, COMM, ULT, APIC, TXXX
 from yt_dlp import YoutubeDL
 from ytmusicapi import YTMusic
 
-MP4_TAGS_MAP = {
-    "album": "\xa9alb",
-    "album_artist": "aART",
-    "artist": "\xa9ART",
-    "comment": "\xa9cmt",
-    "lyrics": "\xa9lyr",
-    "media_type": "stik",
-    "rating": "rtng",
-    "release_date": "\xa9day",
-    "title": "\xa9nam",
+MP3_TAGS_MAP = {
+    "album": TALB,
+    "artist": TPE1,
+    "comment": COMM,
+    "lyrics": ULT,
+    "release_date": TYER,
+    "title": TIT2,
 }
 
 
@@ -172,7 +170,7 @@ class Dl:
         return self.temp_path / f"{video_id}.m4a"
 
     def get_fixed_location(self, video_id):
-        return self.temp_path / f"{video_id}_fixed.m4a"
+        return self.temp_path / f"{video_id}_fixed.mp3"
 
     def get_final_location(self, tags):
         final_location_folder = self.template_folder.split("/")
@@ -186,7 +184,7 @@ class Dl:
             for i in final_location_file[:-1]
         ] + [
             self.get_sanizated_string(final_location_file[-1].format(**tags), False)
-            + ".m4a"
+            + ".mp3"
         ]
         return self.final_path.joinpath(*final_location_folder).joinpath(
             *final_location_file
@@ -228,38 +226,40 @@ class Dl:
                 *fixup,
                 "-movflags",
                 "+faststart",
-                "-c",
-                "copy",
                 fixed_location,
             ],
             check=True,
         )
 
     def apply_tags(self, fixed_location, tags):
-        mp4_tags = {
-            v: [tags[k]]
-            for k, v in MP4_TAGS_MAP.items()
+        mp3_tags = [
+            v(encoding=3, text=tags[k])
+            for k, v in MP3_TAGS_MAP.items()
             if k not in self.exclude_tags and tags.get(k) is not None
-        }
+        ]
         if not {"track", "track_total"} & set(self.exclude_tags):
-            mp4_tags["trkn"] = [[0, 0]]
+            mp3_tags.append(
+                TRCK(encoding=3, text=f"{tags['track']}/{tags['track_total']}")
+            )
         if "cover" not in self.exclude_tags:
-            mp4_tags["covr"] = [
-                MP4Cover(
-                    self.get_cover(tags["cover_url"]),
-                    imageformat=MP4Cover.FORMAT_JPEG
-                    if self.cover_format == "jpg"
-                    else MP4Cover.FORMAT_PNG,
+            mp3_tags.append(
+                APIC(
+                    encoding=3,
+                    mime='image/jpeg' if self.cover_format == "jpg" else 'image/png',
+                    type=3,
+                    desc=u'Cover',
+                    data=self.get_cover(tags["cover_url"])
                 )
-            ]
-        if "track" not in self.exclude_tags:
-            mp4_tags["trkn"][0][0] = tags["track"]
-        if "track_total" not in self.exclude_tags:
-            mp4_tags["trkn"][0][1] = tags["track_total"]
-        mp4 = MP4(fixed_location)
-        mp4.clear()
-        mp4.update(mp4_tags)
-        mp4.save()
+            )
+        mp3 = MP3(fixed_location, ID3=ID3)
+        if mp3.tags is None:
+            mp3.add_tags()
+        for tag in mp3_tags:
+            mp3.tags.add(tag)
+        mp3.tags.add(
+            TXXX(encoding=3, desc="ytid", text=tags["ytid"])
+        )
+        mp3.save()
 
     def move_to_final_location(self, fixed_location, final_location):
         final_location.parent.mkdir(parents=True, exist_ok=True)

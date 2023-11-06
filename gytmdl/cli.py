@@ -6,6 +6,8 @@ from pathlib import Path
 import click
 
 from . import __version__
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3, TXXX
 from .dl import Dl
 
 EXCLUDED_PARAMS = (
@@ -92,7 +94,7 @@ def no_config_callback(
     "--itag",
     "-i",
     type=click.Choice(["141", "251", "140"]),
-    default="140",
+    default="141",
     help="Itag (audio quality).",
 )
 @click.option(
@@ -219,6 +221,21 @@ def cli(
             with open(url, "r") as f:
                 _urls.extend(f.read().splitlines())
         urls = tuple(_urls)
+    logger.debug("Collecting all mp3 files from final path")
+
+    downloaded_track_ids = []
+    for path in final_path.glob("**/*.mp3"):
+        audio = MP3(path, ID3=ID3)
+        ytid = None
+        for key in audio.tags.keys():
+            if key.startswith("TXXX:"):
+                desc = key.split(':', 1)[1]
+                if desc == 'ytid':
+                    ytid = audio.tags[key].text[0]
+                    break
+        if ytid is not None:
+            downloaded_track_ids.append(ytid)
+
     logger.debug("Starting downloader")
     dl = Dl(**locals())
     download_queue = []
@@ -233,6 +250,11 @@ def cli(
     error_count = 0
     for i, url in enumerate(download_queue):
         for j, track in enumerate(url):
+            if track["id"] in downloaded_track_ids:
+                logger.info(
+                    f"Skipping already downloaded track: {track['id']}"
+                )
+                continue
             logger.info(
                 f'Downloading "{track["title"]}" (track {j + 1}/{len(url)} from URL {i + 1}/{len(download_queue)})'
             )
@@ -245,6 +267,7 @@ def cli(
                     logger.debug(f'Video ID changed to "{track["id"]}"')
                     ytmusic_watch_playlist = dl.get_ytmusic_watch_playlist(track["id"])
                 tags = dl.get_tags(ytmusic_watch_playlist)
+                tags["ytid"] = track["id"]
                 final_location = dl.get_final_location(tags)
                 logger.debug(f'Final location is "{final_location}"')
                 if not final_location.exists() or overwrite:
