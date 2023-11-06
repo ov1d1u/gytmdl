@@ -238,9 +238,10 @@ class Dl:
             if k not in self.exclude_tags and tags.get(k) is not None
         ]
         if not {"track", "track_total"} & set(self.exclude_tags):
-            mp3_tags.append(
-                TRCK(encoding=3, text=f"{tags['track']}/{tags['track_total']}")
-            )
+            if "track" in tags and "track_total" in tags:
+                mp3_tags.append(
+                    TRCK(encoding=3, text=f"{tags['track']}/{tags['track_total']}")
+                )
         if "cover" not in self.exclude_tags:
             mp3_tags.append(
                 APIC(
