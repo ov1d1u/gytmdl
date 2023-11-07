@@ -226,6 +226,8 @@ class Dl:
                 *fixup,
                 "-movflags",
                 "+faststart",
+                "-q:a",
+                "2",
                 fixed_location,
             ],
             check=True,
